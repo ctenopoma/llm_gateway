@@ -70,6 +70,94 @@ Web アプリケーションなどの信頼されたクライアントは、以�
 - `X-User-Oid`: リクエストを行っているエンドユーザーの ID
 - `X-App-Id`: 登録済みのアプリケーション ID
 
+### 3.1.1 委任課金パラメータの指定方法
+
+カスタムヘッダーや JSON ボディのトップレベルを変更できないクライアント（Dify の LLM ノード等）向けに、複数の方法でユーザー・アプリ情報を指定できます。
+
+- `x_user_oid`: エンドユーザーの ID（課金先）
+- `x_app_id`: 登録済みアプリケーション ID
+
+#### 指定方法と優先順位
+
+| 優先順位 | 指定方法 | 代表的なユースケース |
+|:---:|---|---|
+| 1 | URL クエリパラメータ | URL のみ変更可能なツール |
+| 2 | リクエストボディトップレベル (`x_user_oid`, `x_app_id`) | HTTP Request ノード等 |
+| 3 | **メッセージ内埋め込み JSON** | **Dify LLM ノード（推奨）** |
+| 4 | HTTP ヘッダー (`X-User-Oid`, `X-App-Id`) | 自社 Web アプリ・スクリプト |
+
+複数の方法で同時に指定された場合、上位の方法が優先されます。
+
+#### 方法 A: メッセージ内埋め込み JSON（Dify LLM ノード推奨）
+
+Dify の LLM ノードでは JSON ボディのトップレベルフィールドを変更できず、操作できるのは `messages` の `content` 文字列のみです。
+そのため、ユーザーメッセージの `content` に委任課金パラメータを JSON 形式で埋め込みます。
+
+**フォーマット A-1: ベアフォーマット（推奨 — Dify Jinja2 テンプレート対応）**
+
+```json
+{
+  "model": "gpt-4o",
+  "messages": [
+    {
+      "role": "user",
+      "content": "\"x_user_oid\": \"user-123\", \"x_app_id\": \"dify-prod\", \"message\": \"Hello!\""
+    }
+  ]
+}
+```
+
+**フォーマット A-2: 完全 JSON フォーマット（`{}` あり）**
+
+```json
+{
+  "model": "gpt-4o",
+  "messages": [
+    {
+      "role": "user",
+      "content": "{\"x_user_oid\": \"user-123\", \"x_app_id\": \"dify-prod\", \"message\": \"Hello!\"}"
+    }
+  ]
+}
+```
+
+> Dify の Jinja2 テンプレートエンジンが外側の `{` `}` を `{{ }}` 構文の一部として消費する場合があるため、ベアフォーマット (A-1) を推奨します。Gateway はどちらの形式も自動認識します。
+
+**動作**:
+1. Gateway が `user` ロールのメッセージ `content` をスキャン
+2. JSON としてパースし、`x_user_oid` と `x_app_id` が両方存在すれば抽出（ベアフォーマットの場合は自動で `{}` を補完）
+3. `content` を `message` フィールドの値に書き換え（LLM にはクリーンなテキストが渡る）
+4. 抽出した `x_user_oid` / `x_app_id` で委任課金を適用
+5. multimodal（リスト形式）の `content` にも対応（`[{"type": "text", "text": "..."}]`）
+
+**ユースケース**: API キーはアプリオーナーが1つ登録し、Dify アプリにログインしたユーザーの ID をメッセージに動的に埋め込む。
+
+#### 方法 B: リクエストボディトップレベルで指定
+
+JSON ボディのトップレベルに `x_user_oid` と `x_app_id` を追加します。
+HTTP Request ノードなど、ボディを自由に構築できる環境向けです。
+
+```json
+{
+  "model": "gpt-4o",
+  "messages": [{"role": "user", "content": "Hello"}],
+  "x_user_oid": "user-123",
+  "x_app_id": "dify-prod"
+}
+```
+
+#### 方法 C: URL クエリパラメータで指定
+
+```
+API Endpoint: https://gateway.example.com/v1?x_app_id=dify-prod&x_user_oid=user-123
+API Key:      sk-gate-xxxxx
+```
+
+**制約** (全方法共通):
+- `x_user_oid` と `x_app_id` は必ずペアで指定（片方だけは 401 エラー）
+- 指定されたユーザーが未登録 → リクエスト拒否
+- 指定されたアプリが未登録または無効 → リクエスト拒否
+
 ### 3.2 認証ロジック
 
 ```python

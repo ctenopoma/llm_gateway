@@ -12,6 +12,7 @@ Order:
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from datetime import datetime
@@ -273,20 +274,80 @@ async def _authenticate(
             await check_ip_allowlist(api_key, client_host)
 
         # ── Delegated billing: API key + X-User-Oid + X-App-Id ──
-        # When both headers are present, bill the specified user
-        # instead of the API key owner (e.g. Dify model registration scenario).
-        delegated_user = request.headers.get("X-User-Oid")
-        delegated_app = request.headers.get("X-App-Id")
+        # When both are present, bill the specified user instead of
+        # the API key owner (e.g. Dify model registration scenario).
+        #
+        # Resolution order (highest priority first):
+        #   1. URL query parameters: x_user_oid / x_app_id
+        #   2. Request body top-level fields: x_user_oid / x_app_id
+        #   3. Message content JSON: {"x_user_oid":"…","x_app_id":"…","message":"…"}
+        #   4. HTTP headers: X-User-Oid / X-App-Id
+
+        # Try to extract from request body (safe: no-op for GET or non-JSON)
+        body_user_oid: str | None = None
+        body_app_id: str | None = None
+        msg_user_oid: str | None = None
+        msg_app_id: str | None = None
+        if request.method == "POST":
+            try:
+                body = await request.json()
+                if isinstance(body, dict):
+                    # Priority 2: top-level body fields
+                    body_user_oid = body.get("x_user_oid")
+                    body_app_id = body.get("x_app_id")
+
+                    # Priority 3: delegation JSON embedded in message content
+                    # Dify LLM nodes can only modify the message text, so users
+                    # can embed delegation params as a JSON string in a user
+                    # message.  Format:
+                    #   {"x_user_oid":"…", "x_app_id":"…", "message":"actual text"}
+                    # When detected the content is rewritten to the "message"
+                    # value so the downstream LLM sees clean text.
+                    if not body_user_oid and not body_app_id:
+                        messages = body.get("messages")
+                        if isinstance(messages, list):
+                            msg_user_oid, msg_app_id = _extract_delegation_from_messages(messages)
+            except Exception as exc:
+                logger.debug(
+                    "delegation_body_parse_skipped",
+                    reason=str(exc),
+                )
+
+        delegated_user = (
+            request.query_params.get("x_user_oid")
+            or body_user_oid
+            or msg_user_oid
+            or request.headers.get("X-User-Oid")
+        )
+        delegated_app = (
+            request.query_params.get("x_app_id")
+            or body_app_id
+            or msg_app_id
+            or request.headers.get("X-App-Id")
+        )
 
         if delegated_user or delegated_app:
+            # Determine which source supplied the delegation
+            _src = (
+                "query_param" if request.query_params.get("x_user_oid") or request.query_params.get("x_app_id")
+                else "body_top_level" if body_user_oid or body_app_id
+                else "message_content" if msg_user_oid or msg_app_id
+                else "header"
+            )
+            logger.info(
+                "delegated_billing_resolved",
+                source=_src,
+                delegated_user=delegated_user,
+                delegated_app=delegated_app,
+            )
             # Both must be supplied together
             if not delegated_user:
                 raise HTTPException(
-                    401, "Missing X-User-Oid header (required when X-App-Id is provided with API key)"
+                    401, "Missing user identifier (X-User-Oid header or x_user_oid query param required when app is specified)"
                 )
             if not delegated_app:
                 raise HTTPException(
-                    401, "Missing X-App-Id header (required when X-User-Oid is provided with API key)"
+                    401, "Missing app identifier (X-App-Id header or x_app_id query param required when user is specified)"
                 )
 
             # Validate app exists and is active
@@ -370,3 +431,121 @@ async def _get_and_check_model(
             )
 
     return model
+
+
+def _try_parse_delegation_json(text: str) -> dict | None:
+    """Try to parse a string as delegation JSON. Returns the parsed dict or None.
+
+    Accepts both:
+      - Full JSON: ``{"x_user_oid": "u", "x_app_id": "a", "message": "hi"}``
+      - Bare key-value pairs (no outer braces):
+        ``"x_user_oid": "u", "x_app_id": "a", "message": "hi"``
+
+    The bare format is common when Dify's Jinja2 template engine consumes
+    the outer ``{`` / ``}`` as part of its ``{{ }}`` variable syntax.
+    """
+    stripped = text.strip()
+
+    # Fast path: already looks like a JSON object
+    if stripped.startswith("{") and stripped.endswith("}"):
+        try:
+            parsed = json.loads(stripped)
+        except (json.JSONDecodeError, TypeError):
+            parsed = None
+        if (
+            isinstance(parsed, dict)
+            and "x_user_oid" in parsed
+            and "x_app_id" in parsed
+        ):
+            return parsed
+
+    # Fallback: bare key-value pairs without outer braces
+    # e.g.  "x_user_oid": "test2", "x_app_id": "dify-prod", "message": "hello"
+    if "x_user_oid" in stripped and "x_app_id" in stripped:
+        wrapped = "{" + stripped + "}"
+        try:
+            parsed = json.loads(wrapped)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if (
+            isinstance(parsed, dict)
+            and "x_user_oid" in parsed
+            and "x_app_id" in parsed
+        ):
+            logger.debug(
+                "delegation_json_auto_wrapped",
+                original=stripped[:120],
+            )
+            return parsed
+
+    return None
+
+
+def _extract_delegation_from_messages(
+    messages: list[dict],
+) -> tuple[str | None, str | None]:
+    """
+    Scan user messages for embedded delegation JSON.
+
+    Dify LLM nodes cannot add custom top-level body fields; the only
+    controllable part is the message text.  Users can embed delegation
+    parameters inside a user message as a JSON string:
+
+        {"x_user_oid": "user-123", "x_app_id": "my-app", "message": "Hello!"}
+
+    Supports both plain string content and multimodal (list) content:
+      - String: ``"content": "{\"x_user_oid\": ...}"``
+      - List:   ``"content": [{"type": "text", "text": "{\"x_user_oid\": ...}"}]``
+
+    When found the message's ``content`` is **rewritten** in-place to
+    contain only the ``message`` value, so the downstream LLM receives
+    clean text.
+
+    Returns (user_oid, app_id) or (None, None) if nothing found.
+    """
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+
+        # ── Case 1: content is a plain string ──
+        if isinstance(content, str):
+            parsed = _try_parse_delegation_json(content)
+            if parsed:
+                user_oid = str(parsed["x_user_oid"])
+                app_id = str(parsed["x_app_id"])
+                msg["content"] = parsed.get("message", "")
+                logger.debug(
+                    "delegation_extracted_from_message",
+                    user_oid=user_oid,
+                    app_id=app_id,
+                    source="string_content",
+                )
+                return user_oid, app_id
+            continue
+
+        # ── Case 2: content is a list (multimodal / content-parts) ──
+        if isinstance(content, list):
+            for i, part in enumerate(content):
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") != "text":
+                    continue
+                text = part.get("text", "")
+                if not isinstance(text, str):
+                    continue
+                parsed = _try_parse_delegation_json(text)
+                if parsed:
+                    user_oid = str(parsed["x_user_oid"])
+                    app_id = str(parsed["x_app_id"])
+                    # Rewrite just this text part
+                    content[i] = {"type": "text", "text": parsed.get("message", "")}
+                    logger.debug(
+                        "delegation_extracted_from_message",
+                        user_oid=user_oid,
+                        app_id=app_id,
+                        source="list_content",
+                    )
+                    return user_oid, app_id
+
+    return None, None
