@@ -16,7 +16,7 @@ CREATE TABLE Users (
     payment_valid_until DATE NOT NULL,
 
     webhook_url VARCHAR(512),
-    total_cost_cache DECIMAL(10, 2) DEFAULT 0.00,
+    total_cost_cache DECIMAL(18, 10) DEFAULT 0.00,
 
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
@@ -52,8 +52,8 @@ CREATE TABLE ApiKeys (
     rate_limit_rpm INTEGER NOT NULL DEFAULT 60,
 
     -- Budget Management
-    budget_monthly DECIMAL(10, 2) DEFAULT NULL,
-    usage_current_month DECIMAL(10, 2) DEFAULT 0.00,
+    budget_monthly DECIMAL(18, 10) DEFAULT NULL,
+    usage_current_month DECIMAL(18, 10) DEFAULT 0.00,
     last_reset_month VARCHAR(7),
 
     -- Key Lifecycle
@@ -217,8 +217,8 @@ CREATE TABLE UsageLogs (
     cache_read_tokens INTEGER DEFAULT 0,
 
     -- Cost Calculation
-    cost DECIMAL(10, 4) NOT NULL DEFAULT 0,
-    internal_cost DECIMAL(10, 4) DEFAULT 0,
+    cost DECIMAL(18, 10) NOT NULL DEFAULT 0,
+    internal_cost DECIMAL(18, 10) DEFAULT 0,
 
     -- Request Status
     status VARCHAR(20) NOT NULL DEFAULT 'completed',

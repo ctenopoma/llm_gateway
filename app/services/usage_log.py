@@ -130,7 +130,7 @@ async def calculate_cost(
         Decimal(input_tokens) / Decimal("1000000") * input_cost
         + Decimal(output_tokens) / Decimal("1000000") * output_cost
     )
-    return total.quantize(Decimal("0.0001"))
+    return total.quantize(Decimal("0.0000000001"))
 
 
 async def log_audit(

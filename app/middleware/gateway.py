@@ -38,7 +38,7 @@ logger = structlog.get_logger(__name__)
 
 # Paths that bypass the full middleware pipeline
 _PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
-_PUBLIC_PREFIXES = ("/admin",)
+_PUBLIC_PREFIXES = ("/admin", "/v1/models")
 
 
 class GatewayMiddleware(BaseHTTPMiddleware):

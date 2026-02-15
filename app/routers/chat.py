@@ -147,6 +147,7 @@ async def chat_completions(request: Request):
 
         if chat_request.stream:
             call_kwargs["stream"] = True
+            call_kwargs["stream_options"] = {"include_usage": True}
             response = await llm_router.acompletion(**call_kwargs)
 
             return StreamingResponse(
@@ -182,11 +183,19 @@ async def chat_completions(request: Request):
                 latency_ms=latency_ms,
             )
 
-            # Release budget reservation
-            if api_key_id and estimated_cost > 0:
-                await BudgetReservationSystem.release_reservation(
-                    api_key_id, estimated_cost, float(cost)
-                )
+            # Release budget reservation and update usage
+            if api_key_id:
+                if estimated_cost > 0:
+                    await BudgetReservationSystem.release_reservation(
+                        api_key_id, estimated_cost, float(cost)
+                    )
+                else:
+                    # No budget reservation, but still track usage
+                    await db.execute(
+                        "UPDATE ApiKeys SET usage_current_month = usage_current_month + $1, last_used_at = NOW() WHERE id = $2",
+                        cost,
+                        api_key_id,
+                    )
 
             # Return clean OpenAI-compatible response (exclude None fields
             # to avoid issues with strict clients like Dify)
@@ -298,11 +307,18 @@ async def embeddings(request: Request):
             latency_ms=latency_ms,
         )
 
-        # Release budget reservation
-        if api_key_id and estimated_cost > 0:
-            await BudgetReservationSystem.release_reservation(
-                api_key_id, estimated_cost, float(cost)
-            )
+        # Release budget reservation and update usage
+        if api_key_id:
+            if estimated_cost > 0:
+                await BudgetReservationSystem.release_reservation(
+                    api_key_id, estimated_cost, float(cost)
+                )
+            else:
+                await db.execute(
+                    "UPDATE ApiKeys SET usage_current_month = usage_current_month + $1, last_used_at = NOW() WHERE id = $2",
+                    cost,
+                    api_key_id,
+                )
 
         return _clean_openai_response(result)
 
@@ -466,11 +482,18 @@ async def rerank(request: Request):
             latency_ms=latency_ms,
         )
 
-        # Release budget reservation
-        if api_key_id and estimated_cost > 0:
-            await BudgetReservationSystem.release_reservation(
-                api_key_id, estimated_cost, float(cost)
-            )
+        # Release budget reservation and update usage
+        if api_key_id:
+            if estimated_cost > 0:
+                await BudgetReservationSystem.release_reservation(
+                    api_key_id, estimated_cost, float(cost)
+                )
+            else:
+                await db.execute(
+                    "UPDATE ApiKeys SET usage_current_month = usage_current_month + $1, last_used_at = NOW() WHERE id = $2",
+                    cost,
+                    api_key_id,
+                )
 
         return _clean_openai_response(result)
 
@@ -800,11 +823,18 @@ async def _stream_processor(
         )
 
     finally:
-        # Release budget reservation
-        if api_key_id and estimated_cost > 0:
-            await BudgetReservationSystem.release_reservation(
-                api_key_id, estimated_cost, float(cost)
-            )
+        # Release budget reservation and update usage
+        if api_key_id:
+            if estimated_cost > 0:
+                await BudgetReservationSystem.release_reservation(
+                    api_key_id, estimated_cost, float(cost)
+                )
+            else:
+                await db.execute(
+                    "UPDATE ApiKeys SET usage_current_month = usage_current_month + $1, last_used_at = NOW() WHERE id = $2",
+                    cost,
+                    api_key_id,
+                )
 
 
 async def _handle_llm_error(

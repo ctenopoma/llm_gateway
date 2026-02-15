@@ -75,7 +75,10 @@
 
     function fmtCost(v) {
         if (v == null) return "—";
-        return `¥${Number(v).toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+        const n = Number(v);
+        // 0.0001未満の微小コストも正しく表示するため最大10桁
+        const digits = n !== 0 && Math.abs(n) < 0.0001 ? 10 : 4;
+        return `¥${n.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: digits })}`;
     }
 
     function badge(text, type = "muted") {
@@ -687,7 +690,7 @@
                 html += `<div class="empty-state"><div class="empty-icon">🤖</div><p>モデルが登録されていません</p></div>`;
             } else {
                 html += `<div class="section-card"><div class="table-wrapper"><table>
-                    <thead><tr><th>ID</th><th>LiteLLM名</th><th>プロバイダー</th><th>Input / Output</th><th>コンテキスト</th><th>機能</th><th>ステータス</th><th>操作</th></tr></thead><tbody>`;
+                    <thead><tr><th>ID</th><th>LiteLLM名</th><th>プロバイダー</th><th>Input / Output<br><small style="font-weight:normal;color:var(--text-muted)">(¥/1Mトークン)</small></th><th>コンテキスト</th><th>機能</th><th>ステータス</th><th>操作</th></tr></thead><tbody>`;
                 for (const m of rows) {
                     const caps = [];
                     if (m.supports_streaming) caps.push(badge("stream", "info"));
@@ -759,8 +762,8 @@
             </div>
             <div class="form-group"><label>プロバイダー</label><input class="form-control" id="f-provider" value="${esc(m.provider || "")}" required></div>
             <div class="form-row">
-                <div class="form-group"><label>Input Cost (¥/1M)</label><input class="form-control" id="f-icost" type="number" step="0.0001" value="${m.input_cost ?? ""}"></div>
-                <div class="form-group"><label>Output Cost (¥/1M)</label><input class="form-control" id="f-ocost" type="number" step="0.0001" value="${m.output_cost ?? ""}"></div>
+                <div class="form-group"><label>Input Cost <small style="font-weight:normal;color:var(--text-muted)">(¥/1Mトークン)</small></label><input class="form-control" id="f-icost" type="number" step="0.0001" min="0" placeholder="例: 3.00" value="${m.input_cost ?? ""}"></div>
+                <div class="form-group"><label>Output Cost <small style="font-weight:normal;color:var(--text-muted)">(¥/1Mトークン)</small></label><input class="form-control" id="f-ocost" type="number" step="0.0001" min="0" placeholder="例: 15.00" value="${m.output_cost ?? ""}"></div>
             </div>
             <div class="form-row">
                 <div class="form-group"><label>コンテキスト窓</label><input class="form-control" id="f-ctx" type="number" value="${m.context_window ?? 4096}"></div>
