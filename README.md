@@ -35,6 +35,20 @@ Antigravity LLM Gateway is an enterprise-ready API gateway for managing access t
 
 ### Installation
 
+#### Option 1: Docker Setup (Recommended)
+
+The easiest way to get started is using Docker Compose. This will start the Gateway, PostgreSQL, Redis, and Nginx services automatically. The database will be initialized on the first run.
+
+```bash
+docker-compose up -d
+```
+
+That's it! The services should now be running.
+
+#### Option 2: Manual Installation (Local Development)
+
+If you prefer to run the services manually or for local development:
+
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
@@ -50,10 +64,12 @@ Antigravity LLM Gateway is an enterprise-ready API gateway for managing access t
    ```bash
    cp .env.example .env
    # Edit .env with your database and API settings
+   # Ensure you have a running PostgreSQL and Redis instance matched in .env
    ```
 
 4. **Initialize the database**
    ```bash
+   # Run the initialization script to create tables
    python create_missing_tables.py
    ```
 
@@ -61,16 +77,6 @@ Antigravity LLM Gateway is an enterprise-ready API gateway for managing access t
    ```bash
    uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
-
-### Docker Setup
-
-```bash
-docker-compose up -d
-```
-
-This will start the Gateway, PostgreSQL, Redis, and Nginx services.
-
----
 
 ## 🏗️ Architecture
 
