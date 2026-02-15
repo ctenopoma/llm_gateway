@@ -53,38 +53,68 @@ async def health_check_loop() -> None:
 
 
 async def check_endpoint_health(endpoint: dict) -> None:
-    """Check a single endpoint and update DB status."""
-    health_url = endpoint.get("health_check_url") or f"{endpoint['base_url']}/health"
+    """Check a single endpoint and update DB status.
+
+    Validation strategy:
+    1. If ``health_check_url`` is explicitly set, use it (single GET).
+    2. Otherwise, perform a two-step check:
+       a. GET ``{base_url}/models`` — validates that the base_url path
+          is correctly pointing at an OpenAI-compatible API (e.g. includes
+          ``/v1`` when required).  This catches mis-configured URLs that
+          are missing the ``/v1`` prefix.
+       b. Fall back to the server-root ``/health`` endpoint (strip any
+          path from base_url) so that generic server liveness is also
+          confirmed.
+    """
+    custom_health_url = endpoint.get("health_check_url")
     timeout = endpoint.get("health_check_timeout") or 10
+    base_url = endpoint["base_url"].rstrip("/")
 
     start = time.time()
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(health_url)
+            if custom_health_url:
+                # Explicit health-check URL — trust the operator.
+                response = await client.get(custom_health_url)
+                if response.status_code != 200:
+                    await _mark_degraded(endpoint)
+                    return
+            else:
+                # ── Step 1: Validate the API path via /models ────
+                models_url = f"{base_url}/models"
+                response = await client.get(models_url)
+                if response.status_code != 200:
+                    logger.warning(
+                        "endpoint_health_models_failed",
+                        endpoint_id=str(endpoint["id"]),
+                        models_url=models_url,
+                        status_code=response.status_code,
+                        hint="base_url may be missing /v1 prefix",
+                    )
+                    await _mark_degraded(endpoint)
+                    return
+
             latency_ms = int((time.time() - start) * 1000)
 
-            if response.status_code == 200:
-                await db.execute(
-                    """
-                    UPDATE ModelEndpoints
-                    SET health_status = 'healthy',
-                        last_health_check = NOW(),
-                        next_check_at = NOW() + make_interval(secs => health_check_interval * 60),
-                        consecutive_failures = 0,
-                        avg_latency_ms = (avg_latency_ms * 0.8 + $1 * 0.2)::INTEGER
-                    WHERE id = $2
-                    """,
-                    latency_ms,
-                    endpoint["id"],
-                )
-                logger.info(
-                    "endpoint_health_check_passed",
-                    endpoint_id=str(endpoint["id"]),
-                    latency_ms=latency_ms,
-                )
-            else:
-                await _mark_degraded(endpoint)
+            await db.execute(
+                """
+                UPDATE ModelEndpoints
+                SET health_status = 'healthy',
+                    last_health_check = NOW(),
+                    next_check_at = NOW() + make_interval(secs => health_check_interval * 60),
+                    consecutive_failures = 0,
+                    avg_latency_ms = (avg_latency_ms * 0.8 + $1 * 0.2)::INTEGER
+                WHERE id = $2
+                """,
+                latency_ms,
+                endpoint["id"],
+            )
+            logger.info(
+                "endpoint_health_check_passed",
+                endpoint_id=str(endpoint["id"]),
+                latency_ms=latency_ms,
+            )
 
     except Exception as e:
         await _mark_failed(endpoint, str(e))

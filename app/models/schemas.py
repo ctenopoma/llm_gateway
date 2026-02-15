@@ -180,10 +180,53 @@ class AuditLog(BaseModel):
 
 # ── API request / response models ────────────────────────────────
 
+# ── Multimodal content types (VLM support) ──────────────────────
+
+class ImageUrl(BaseModel):
+    """Image URL content part for vision models."""
+    url: str
+    detail: Optional[str] = None  # "auto", "low", "high"
+
+
+class ContentPart(BaseModel):
+    """
+    A single part of a multimodal message.
+
+    Supports:
+      - {"type": "text", "text": "..."}
+      - {"type": "image_url", "image_url": {"url": "...", "detail": "..."}}
+    """
+    type: str  # "text" | "image_url"
+    text: Optional[str] = None
+    image_url: Optional[ImageUrl] = None
+
+
 class ChatMessage(BaseModel):
+    """
+    A single message in the chat conversation.
+
+    ``content`` can be:
+      - A plain string (standard text message)
+      - A list of ContentPart dicts (multimodal message for VLMs)
+    """
     role: str
-    content: str
+    content: str | list[ContentPart]
     name: Optional[str] = None
+
+    def get_text_content(self) -> str:
+        """Extract only the text portions from content (works for both str and multimodal)."""
+        if isinstance(self.content, str):
+            return self.content
+        return "\n".join(
+            part.text for part in self.content
+            if part.type == "text" and part.text
+        )
+
+    def has_vision_content(self) -> bool:
+        """Return True if this message contains image_url parts."""
+        if isinstance(self.content, str):
+            return False
+        return any(part.type == "image_url" for part in self.content)
 
 
 class ChatCompletionRequest(BaseModel):

@@ -130,7 +130,7 @@ async def chat_completions(request: Request):
         # Build call kwargs
         call_kwargs = {
             "model": chat_request.model,
-            "messages": [msg.model_dump() for msg in chat_request.messages],
+            "messages": [msg.model_dump(exclude_none=True) for msg in chat_request.messages],
         }
         if chat_request.max_tokens is not None:
             call_kwargs["max_tokens"] = chat_request.max_tokens

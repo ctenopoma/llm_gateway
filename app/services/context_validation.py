@@ -47,8 +47,22 @@ async def validate_context_length(
         - Bad user experience
     """
     messages_text = "\n".join(
-        f"{msg.role}: {msg.content}" for msg in request.messages
+        f"{msg.role}: {msg.get_text_content()}" for msg in request.messages
     )
+
+    # Warn if vision content is being sent
+    has_vision = any(msg.has_vision_content() for msg in request.messages)
+    if has_vision and not model.supports_vision:
+        raise HTTPException(
+            400,
+            detail={
+                "error": {
+                    "code": "vision_not_supported",
+                    "message": f"Model '{model.id}' does not support vision/image inputs",
+                    "type": "invalid_request_error",
+                }
+            },
+        )
 
     estimated_input_tokens = estimate_tokens(messages_text, model.model_family)
     requested_output = request.max_tokens or model.max_output_tokens
