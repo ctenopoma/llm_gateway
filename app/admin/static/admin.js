@@ -81,6 +81,25 @@
         return `¥${n.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: digits })}`;
     }
 
+    function downloadCSV(filename, rows) {
+        if (!rows || rows.length === 0) return;
+        const csvContent = rows.map(r => r.map(v => {
+            const s = String(v ?? "").replace(/"/g, '""');
+            return s.includes(",") || s.includes("\n") || s.includes('"') ? `"${s}"` : s;
+        }).join(",")).join("\n");
+
+        // Excel-compatible UTF-8 with BOM
+        const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
     function badge(text, type = "muted") {
         return `<span class="badge badge-${type}">${esc(text)}</span>`;
     }
@@ -228,6 +247,7 @@
                     <div class="form-group">
                         <label>&nbsp;</label>
                         <button class="btn btn-primary btn-sm" id="bl-go">表示</button>
+                        <button class="btn btn-secondary btn-sm" id="bl-csv" style="margin-left:8px" ${res.users.length === 0 ? "disabled" : ""}>CSV出力</button>
                     </div>
                 </div>`;
 
@@ -273,6 +293,20 @@
             $("bl-go")?.addEventListener("click", () => {
                 billingMonth = $("bl-month").value;
                 renderBilling();
+            });
+
+            $("bl-csv")?.addEventListener("click", () => {
+                const headers = ["ユーザーOID", "メール", "表示名", "リクエスト数", "入力トークン", "出力トークン", "コスト (円)"];
+                const dataRows = res.users.map(u => [
+                    u.user_oid,
+                    u.email || "",
+                    u.display_name || "",
+                    u.requests,
+                    u.input_tokens,
+                    u.output_tokens,
+                    u.total_cost
+                ]);
+                downloadCSV(`billing_${res.month}.csv`, [headers, ...dataRows]);
             });
         } catch (e) {
             $("page-content").innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;
@@ -404,10 +438,10 @@
 
                     const r = check.related;
                     const lines = [];
-                    if (r.api_keys > 0)   lines.push(`  ・APIキー: ${r.api_keys}件`);
-                    if (r.apps > 0)        lines.push(`  ・アプリ: ${r.apps}件`);
-                    if (r.usage_logs > 0)  lines.push(`  ・利用ログ: ${r.usage_logs}件`);
-                    if (r.audit_logs > 0)  lines.push(`  ・監査ログ: ${r.audit_logs}件`);
+                    if (r.api_keys > 0) lines.push(`  ・APIキー: ${r.api_keys}件`);
+                    if (r.apps > 0) lines.push(`  ・アプリ: ${r.apps}件`);
+                    if (r.usage_logs > 0) lines.push(`  ・利用ログ: ${r.usage_logs}件`);
+                    if (r.audit_logs > 0) lines.push(`  ・監査ログ: ${r.audit_logs}件`);
 
                     const needsForce = check.has_blockers;
                     const relatedText = lines.length > 0
