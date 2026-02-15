@@ -173,6 +173,7 @@ async def billing(month: Optional[str] = None):
             FROM UsageLogs l
             WHERE l.created_at >= $1 AND l.created_at < $2
               AND l.status = 'completed'
+              AND l.user_oid != $3
             GROUP BY l.user_oid
         ) agg
         LEFT JOIN Users usr ON agg.user_oid = usr.oid
@@ -180,6 +181,7 @@ async def billing(month: Optional[str] = None):
         """,
         start,
         end,
+        SYSTEM_ADMIN_OID,
     )
 
     # Row-level email/display_name come from the JOIN
