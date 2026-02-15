@@ -143,8 +143,13 @@ async def _authenticate(
     """
     Returns (user_oid, api_key_id, api_key_object, app_id).
     Route 1: X-Gateway-Secret  →  user_oid from X-User-Oid header.
-                                  Optional X-App-Id checked against Apps table.
+                                  X-App-Id required, checked against Apps table.
     Route 2: Bearer API key     →  verified from cache / DB.
+              2a: API key only  →  bill to API key owner.
+              2b: API key + X-User-Oid + X-App-Id
+                                →  bill to specified user (delegated billing).
+                                   Both user and app must be registered;
+                                   supplying only one triggers 401.
     """
     settings = get_settings()
 
@@ -189,6 +194,36 @@ async def _authenticate(
         if api_key.allowed_ips:
             client_host = request.client.host if request.client else "unknown"
             await check_ip_allowlist(api_key, client_host)
+
+        # ── Delegated billing: API key + X-User-Oid + X-App-Id ──
+        # When both headers are present, bill the specified user
+        # instead of the API key owner (e.g. Dify model registration scenario).
+        delegated_user = request.headers.get("X-User-Oid")
+        delegated_app = request.headers.get("X-App-Id")
+
+        if delegated_user or delegated_app:
+            # Both must be supplied together
+            if not delegated_user:
+                raise HTTPException(
+                    401, "Missing X-User-Oid header (required when X-App-Id is provided with API key)"
+                )
+            if not delegated_app:
+                raise HTTPException(
+                    401, "Missing X-App-Id header (required when X-User-Oid is provided with API key)"
+                )
+
+            # Validate app exists and is active
+            app_row = await db.fetch_one(
+                "SELECT is_active FROM Apps WHERE app_id = $1", delegated_app
+            )
+            if not app_row:
+                raise HTTPException(401, f"Invalid App ID: {delegated_app}")
+            if not app_row["is_active"]:
+                raise HTTPException(403, f"App is disabled: {delegated_app}")
+
+            # Return delegated user_oid for billing;
+            # API key object is still used for rate limiting / budget / model permissions.
+            return delegated_user, str(api_key.id), api_key, delegated_app
 
         return api_key.user_oid, str(api_key.id), api_key, None
 
