@@ -1,0 +1,75 @@
+services:
+  llmgw-nginx:
+    image: nginx:alpine
+    container_name: llmgw-nginx
+    ports:
+      - "80:80"
+      # - "443:443"  # Uncomment when adding SSL
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./app/admin/static:/var/www/admin/static:ro
+      # - ./nginx/certs:/etc/nginx/certs:ro  # Uncomment for SSL
+    depends_on:
+      - llmgw-app
+    restart: unless-stopped
+
+  llmgw-app:
+    build: .
+    container_name: llmgw-app
+    # Port exposed only to other containers (not to host)
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://gateway:gateway@llmgw-postgres:5432/llm_gateway
+      REDIS_URL: redis://llmgw-redis:6379/0
+      # Admin panel: http://localhost/admin/
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:-change-me-admin-jwt}
+      ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS:-24}
+    depends_on:
+      llmgw-postgres:
+        condition: service_healthy
+      llmgw-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  llmgw-postgres:
+    image: postgres:16-alpine
+    container_name: llmgw-postgres
+    environment:
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway
+      POSTGRES_DB: llm_gateway
+    ports:
+      - "5432:5432"
+    volumes:
+      - llmgw-pgdata:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/01_init.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U gateway" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  llmgw-redis:
+    image: redis:7-alpine
+    container_name: llmgw-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - llmgw-redisdata:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  llmgw-pgdata:
+  llmgw-redisdata:
+
+

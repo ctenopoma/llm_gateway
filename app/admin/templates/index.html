@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Gateway — Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/admin/static/admin.css?v=2">
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h1>⚡ LLM Gateway</h1>
+            <span class="version">v2.3.0</span>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="#dashboard" class="nav-item active" data-page="dashboard">
+                <span class="nav-icon">📊</span> ダッシュボード
+            </a>
+            <a href="#users" class="nav-item" data-page="users">
+                <span class="nav-icon">👤</span> ユーザー管理
+            </a>
+            <a href="#apps" class="nav-item" data-page="apps">
+                <span class="nav-icon">📱</span> アプリ管理
+            </a>
+
+            <a href="#api-keys" class="nav-item" data-page="api-keys">
+                <span class="nav-icon">🔑</span> APIキー管理
+            </a>
+            <a href="#billing" class="nav-item" data-page="billing">
+                <span class="nav-icon">💰</span> 月次請求
+            </a>
+            <a href="#models" class="nav-item" data-page="models">
+                <span class="nav-icon">🤖</span> モデル管理
+            </a>
+            <a href="#endpoints" class="nav-item" data-page="endpoints">
+                <span class="nav-icon">🌐</span> エンドポイント管理
+            </a>
+            <a href="#usage-logs" class="nav-item" data-page="usage-logs">
+                <span class="nav-icon">📋</span> 利用ログ
+            </a>
+            <a href="#audit-logs" class="nav-item" data-page="audit-logs">
+                <span class="nav-icon">🔍</span> 監査ログ
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <button id="logout-btn" class="btn btn-ghost btn-sm">ログアウト</button>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content" id="main-content">
+        <div class="page-header">
+            <h2 id="page-title">ダッシュボード</h2>
+        </div>
+        <div id="page-content"></div>
+    </main>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 id="modal-title"></h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+            <div class="modal-footer" id="modal-footer"></div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="/admin/static/admin.js?v=4"></script>
+</body>
+
+</html>

@@ -1,0 +1,13 @@
+[project]
+name = "antigravity-llm-gateway"
+version = "2.3.0"
+description = "Antigravity LLM Gateway - Enterprise Production Ready"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120

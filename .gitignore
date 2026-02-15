@@ -1,0 +1,47 @@
+# Ignore pycache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore venv
+venv/
+.venv/
+
+# Ignore .env
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Ignore IDE
+.idea/
+.vscode/
+
+# Ignore logs
+logs/
+*.log
+
+# Ignore temp files
+*.tmp
+*.temp
+
+# Ignore build files
+build/
+dist/
+*.egg-info/
+
+# Ignore coverage files
+.coverage
+htmlcov/
+
+# Ignore pytest cache
+.pytest_cache/
+
+# Ignore other
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.bak

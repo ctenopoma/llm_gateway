@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Gateway — Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/admin/static/admin.css">
+    <style>
+        body.login-page {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: var(--bg-primary);
+        }
+        .login-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 48px 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(12px);
+        }
+        .login-card .logo {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .login-card .logo h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0 0 4px;
+        }
+        .login-card .logo p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+        .login-card .form-group { margin-bottom: 20px; }
+        .login-card label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        .login-card input[type="password"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            font-family: 'Inter', sans-serif;
+            transition: border-color 0.2s;
+            box-sizing: border-box;
+        }
+        .login-card input[type="password"]:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+        .login-card .btn-login {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background: var(--accent);
+            color: #fff;
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .login-card .btn-login:hover { background: var(--accent-hover); }
+        .login-card .btn-login:active { transform: scale(0.98); }
+        .login-card .error-msg {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #f87171;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            margin-bottom: 16px;
+            display: none;
+        }
+    </style>
+</head>
+<body class="login-page">
+    <div class="login-card">
+        <div class="logo">
+            <h1>⚡ LLM Gateway</h1>
+            <p>Administration Panel</p>
+        </div>
+        <div id="error-msg" class="error-msg"></div>
+        <form id="login-form">
+            <div class="form-group">
+                <label for="password">パスワード</label>
+                <input type="password" id="password" placeholder="管理者パスワードを入力" autofocus required>
+            </div>
+            <button type="submit" class="btn-login">ログイン</button>
+        </form>
+    </div>
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const errEl = document.getElementById('error-msg');
+            errEl.style.display = 'none';
+            const pw = document.getElementById('password').value;
+            try {
+                const res = await fetch('/admin/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw }),
+                });
+                if (res.ok) {
+                    window.location.href = '/admin/';
+                } else {
+                    errEl.textContent = 'パスワードが正しくありません';
+                    errEl.style.display = 'block';
+                }
+            } catch (err) {
+                errEl.textContent = 'サーバーに接続できません';
+                errEl.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
