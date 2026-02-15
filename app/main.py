@@ -24,11 +24,19 @@ from app.services.load_balancer import build_router_with_load_balancing
 
 logger = structlog.get_logger(__name__)
 
+from datetime import datetime, timezone, timedelta
+
+JST = timezone(timedelta(hours=9), "JST")
+
+def timestamper(logger, log_method, event_dict):
+    event_dict["timestamp"] = datetime.now(JST).isoformat()
+    return event_dict
+
 # Configure structlog
 structlog.configure(
     processors=[
         structlog.stdlib.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
+        timestamper,
         structlog.processors.JSONRenderer(),
     ],
     wrapper_class=structlog.stdlib.BoundLogger,

@@ -198,6 +198,25 @@ class ChatCompletionRequest(BaseModel):
     stop: Optional[list[str] | str] = None
 
 
+class EmbeddingRequest(BaseModel):
+    """OpenAI-compatible embedding request."""
+    model: str
+    input: str | list[str]
+    encoding_format: Optional[str] = None  # "float" or "base64"
+    dimensions: Optional[int] = None
+
+
+class RerankRequest(BaseModel):
+    """Rerank API request (Cohere / Jina / cross-encoder compatible)."""
+    model: str
+    query: str
+    documents: list[str | dict[str, Any]]
+    top_n: Optional[int] = None
+    return_documents: Optional[bool] = None
+    max_chunks_per_doc: Optional[int] = None
+    rank_fields: Optional[list[str]] = None
+
+
 class ErrorDetail(BaseModel):
     code: str
     message: str

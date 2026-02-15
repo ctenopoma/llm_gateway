@@ -11,7 +11,7 @@ Provides REST endpoints for the management dashboard:
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
@@ -1036,6 +1036,9 @@ def _serialise_rows(rows: list[dict]) -> list[dict]:
         cleaned: dict[str, Any] = {}
         for k, v in row.items():
             if isinstance(v, (datetime,)):
+                if v.tzinfo is None:
+                    # AsyncPG returns naive UTC datetimes by default
+                    v = v.replace(tzinfo=timezone.utc)
                 cleaned[k] = v.isoformat()
             elif isinstance(v, Decimal):
                 cleaned[k] = float(v)

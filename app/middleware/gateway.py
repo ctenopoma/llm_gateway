@@ -24,7 +24,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 from app import database as db
 from app.config import get_settings
-from app.models.schemas import ApiKey, ChatCompletionRequest, ModelConfig
+from app.models.schemas import ApiKey, ChatCompletionRequest, EmbeddingRequest, RerankRequest, ModelConfig
 from app.redis_client import get_redis
 from app.services.api_key import (
     check_ip_allowlist,
@@ -99,6 +99,54 @@ class GatewayMiddleware(BaseHTTPMiddleware):
                     )
                     request.state.estimated_cost = estimated_cost
 
+            # ── Phases 4-6 for embeddings POST ───────────────────
+            elif (
+                request.method == "POST"
+                and "/v1/embeddings" in request.url.path
+            ):
+                body = await request.json()
+                embedding_request = EmbeddingRequest(**body)
+                request.state.embedding_request = embedding_request
+
+                # Phase 4: Model permission check
+                model = await _get_and_check_model(
+                    embedding_request.model, api_key
+                )
+                request.state.model = model
+
+                # Phase 5: Skip context validation for embeddings
+
+                # Phase 6: Budget reservation
+                if api_key:
+                    estimated_cost = await check_and_reserve_budget(
+                        api_key, model, None
+                    )
+                    request.state.estimated_cost = estimated_cost
+
+            # ── Phases 4-6 for rerank POST ───────────────────────
+            elif (
+                request.method == "POST"
+                and "/v1/rerank" in request.url.path
+            ):
+                body = await request.json()
+                rerank_request = RerankRequest(**body)
+                request.state.rerank_request = rerank_request
+
+                # Phase 4: Model permission check
+                model = await _get_and_check_model(
+                    rerank_request.model, api_key
+                )
+                request.state.model = model
+
+                # Phase 5: Skip context validation for rerank
+
+                # Phase 6: Budget reservation
+                if api_key:
+                    estimated_cost = await check_and_reserve_budget(
+                        api_key, model, None
+                    )
+                    request.state.estimated_cost = estimated_cost
+
             # ── Continue ─────────────────────────────────────────
             response = await call_next(request)
 
@@ -127,11 +175,39 @@ class GatewayMiddleware(BaseHTTPMiddleware):
             )
 
         except Exception as e:
-            logger.error(
+            # Capture critical debug info for 500 errors
+            import traceback
+            
+            # Sanitize headers
+            safe_headers = dict(request.headers)
+            if "authorization" in safe_headers:
+                safe_headers["authorization"] = "[REDACTED]"
+            if "x-gateway-secret" in safe_headers:
+                safe_headers["x-gateway-secret"] = "[REDACTED]"
+            
+            # Attempt to capture body snippet (carefully)
+            body_preview = "Could not capture"
+            try:
+                # Only if body hasn't been consumed or we can peek (Starlette Request streams)
+                # But typically we can't re-read stream if consumed. 
+                # This middleware is early in stack, but chat/embeddings endpoints consume it.
+                # Just noting "Check logs for traceback" is often enough with unbuffered output.
+                pass 
+            except:
+                pass
+
+            logger.exception(
                 "middleware_unhandled_error",
                 request_id=request_id,
+                method=request.method,
+                path=request.url.path,
+                headers=safe_headers,
                 error=str(e),
+                traceback=traceback.format_exc(),
             )
+            # Re-raise or return 500 JSON? 
+            # Original code raised HTTPException(500), which FastAPI handles.
+            # But logging traceback explicitly here guarantees we see it.
             raise HTTPException(500, "Internal server error")
 
 
