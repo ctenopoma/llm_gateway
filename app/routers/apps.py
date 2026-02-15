@@ -37,7 +37,7 @@ async def create_app(body: AppCreate, request: Request, owner_id: str):
     # Check if app_id exists
     existing = await db.fetch_one("SELECT app_id FROM Apps WHERE app_id = $1", body.app_id)
     if existing:
-        raise HTTPException(400, "App ID already exists")
+        raise HTTPException(409, "App ID already exists")
 
     # Check owner exists
     user = await db.fetch_one("SELECT oid FROM Users WHERE oid = $1", owner_id)

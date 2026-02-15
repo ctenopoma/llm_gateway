@@ -15,10 +15,33 @@
             headers: { "Content-Type": "application/json", ...opts.headers },
             ...opts,
         });
+
         if (res.status === 401) {
             window.location.href = "/admin/login";
             return null;
         }
+
+        // Handle 409 (Conflict) - e.g. Duplicate User
+        if (res.status === 409) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "データが重複しています");
+        }
+
+        // Handle 422 (Validation Error)
+        if (res.status === 422) {
+            const err = await res.json().catch(() => ({}));
+            if (err.detail && Array.isArray(err.detail)) {
+                // Construct a readable error message from Pydantic details
+                const messages = err.detail.map(e => {
+                    const loc = e.loc[e.loc.length - 1];
+                    const msg = e.msg;
+                    return `・${loc}: ${msg}`;
+                });
+                throw new Error("入力エラー:\n" + messages.join("\n"));
+            }
+            throw new Error(err.detail || "入力内容に誤りがあります");
+        }
+
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || `HTTP ${res.status}`);

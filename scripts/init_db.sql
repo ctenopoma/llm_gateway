@@ -321,3 +321,11 @@ CREATE INDEX idx_auditlogs_admin_oid ON AuditLogs(admin_oid);
 CREATE INDEX idx_auditlogs_action ON AuditLogs(action);
 CREATE INDEX idx_auditlogs_timestamp ON AuditLogs(timestamp DESC);
 CREATE INDEX idx_auditlogs_target ON AuditLogs(target_type, target_id);
+
+-- =============================================
+-- System Admin User (used for audit logging from admin panel)
+-- This user must NOT be deleted or modified.
+-- =============================================
+INSERT INTO Users (oid, email, display_name, payment_status, payment_valid_until)
+VALUES ('SYSTEM_ADMIN', 'system@internal', 'System Administrator', 'active', '2099-12-31')
+ON CONFLICT (oid) DO NOTHING;

@@ -11,7 +11,7 @@ Provides REST endpoints for the management dashboard:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Optional
 from uuid import UUID
@@ -22,9 +22,10 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app import database as db
-from app.config import get_settings
+from app.config import SYSTEM_ADMIN_OID, get_settings
 from app.services.api_key import generate_api_key
 from app.services.health_check import check_endpoint_health
+from app.services.usage_log import log_audit
 from app.services.user_management import bulk_sync_expired_users
 
 logger = structlog.get_logger(__name__)
@@ -213,7 +214,7 @@ class UserCreate(BaseModel):
     oid: str
     email: str
     display_name: Optional[str] = None
-    payment_valid_until: str  # YYYY-MM-DD
+    payment_valid_until: date
     payment_status: str = "active"
 
 
@@ -240,13 +241,24 @@ async def bulk_sync_expiry():
 @router.get("/users", dependencies=[Depends(require_admin)])
 async def list_users():
     rows = await db.fetch_all(
-        "SELECT * FROM Users ORDER BY created_at DESC"
+        "SELECT * FROM Users WHERE oid != $1 ORDER BY created_at DESC",
+        SYSTEM_ADMIN_OID,
     )
     return _serialise_rows(rows)
 
 
 @router.post("/users", dependencies=[Depends(require_admin)])
-async def create_user(body: UserCreate):
+async def create_user(body: UserCreate, request: Request):
+    # Check for existing user (OID or Email)
+    existing = await db.fetch_one(
+        "SELECT oid, email FROM Users WHERE oid = $1 OR email = $2",
+        body.oid,
+        body.email,
+    )
+    if existing:
+        msg = "User with this OID already exists" if existing["oid"] == body.oid else "User with this Email already exists"
+        raise HTTPException(409, msg)
+
     await db.execute(
         """
         INSERT INTO Users (oid, email, display_name, payment_status, payment_valid_until)
@@ -256,13 +268,28 @@ async def create_user(body: UserCreate):
         body.email,
         body.display_name,
         body.payment_status,
-        datetime.strptime(body.payment_valid_until, "%Y-%m-%d").date(),
+        body.payment_valid_until,
+    )
+    await log_audit(
+        admin_oid=SYSTEM_ADMIN_OID,
+        action="user_created",
+        target_type="user",
+        target_id=body.oid,
+        metadata={
+            "email": body.email,
+            "display_name": body.display_name,
+            "payment_status": body.payment_status,
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
     )
     return {"status": "created"}
 
 
 @router.put("/users/{oid}", dependencies=[Depends(require_admin)])
-async def update_user(oid: str, body: UserUpdate):
+async def update_user(oid: str, body: UserUpdate, request: Request):
+    if oid == SYSTEM_ADMIN_OID:
+        raise HTTPException(403, "システム管理者ユーザーは変更できません")
     sets: list[str] = []
     args: list[Any] = []
     idx = 1
@@ -289,11 +316,26 @@ async def update_user(oid: str, body: UserUpdate):
     result = await db.execute(query, *args)
     if result == "UPDATE 0":
         raise HTTPException(404, "User not found")
+    await log_audit(
+        admin_oid=SYSTEM_ADMIN_OID,
+        action="user_updated",
+        target_type="user",
+        target_id=oid,
+        metadata={
+            "display_name": body.display_name,
+            "webhook_url": body.webhook_url,
+            "payment_valid_until": body.payment_valid_until,
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"status": "updated"}
 
 
 @router.patch("/users/{oid}/status", dependencies=[Depends(require_admin)])
-async def update_user_status(oid: str, body: StatusUpdate):
+async def update_user_status(oid: str, body: StatusUpdate, request: Request):
+    if oid == SYSTEM_ADMIN_OID:
+        raise HTTPException(403, "システム管理者ユーザーは変更できません")
     valid = {"active", "expired", "banned", "trial"}
     if body.payment_status not in valid:
         raise HTTPException(400, f"Invalid status. Must be one of: {valid}")
@@ -304,6 +346,15 @@ async def update_user_status(oid: str, body: StatusUpdate):
     )
     if result == "UPDATE 0":
         raise HTTPException(404, "User not found")
+    await log_audit(
+        admin_oid=SYSTEM_ADMIN_OID,
+        action="user_status_changed",
+        target_type="user",
+        target_id=oid,
+        metadata={"payment_status": body.payment_status},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     return {"status": "updated"}
 
 
@@ -351,12 +402,15 @@ async def check_user_deletable(oid: str):
 
 
 @router.delete("/users/{oid}", dependencies=[Depends(require_admin)])
-async def delete_user(oid: str, force: bool = False):
+async def delete_user(oid: str, request: Request, force: bool = False):
     """
     Delete a user (hard delete).
     - ApiKeys: cascade deleted automatically (FK ON DELETE CASCADE).
     - Apps, UsageLogs, AuditLogs: RESTRICT — require ?force=true to delete.
     """
+    if oid == SYSTEM_ADMIN_OID:
+        raise HTTPException(403, "システム管理者ユーザーは削除できません")
+
     user = await db.fetch_one("SELECT oid, email FROM Users WHERE oid = $1", oid)
     if not user:
         raise HTTPException(404, "User not found")
@@ -411,6 +465,19 @@ async def delete_user(oid: str, force: bool = False):
         raise HTTPException(404, "User not found")
 
     logger.info("delete_user_success", user_oid=oid, email=user.get("email"), force=force)
+    await log_audit(
+        admin_oid=SYSTEM_ADMIN_OID,
+        action="user_deleted",
+        target_type="user",
+        target_id=oid,
+        metadata={
+            "email": user.get("email"),
+            "force": force,
+            "deleted_counts": counts,
+        },
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     return {
         "status": "deleted",
         "user_oid": oid,

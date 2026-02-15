@@ -6,6 +6,10 @@ All values are read from environment variables or .env file.
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
+# System admin user OID — used for audit logging from the admin panel.
+# This user must exist in the Users table and must not be deleted.
+SYSTEM_ADMIN_OID = "SYSTEM_ADMIN"
+
 
 class Settings(BaseSettings):
     """Gateway configuration."""
