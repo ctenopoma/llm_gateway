@@ -260,7 +260,10 @@
             const rows = await api("/users");
             if (!rows) return;
 
-            let html = `<div class="toolbar"><button class="btn btn-primary" id="btn-add-user">＋ ユーザー追加</button></div>`;
+            let html = `<div class="toolbar">
+                <button class="btn btn-primary" id="btn-add-user">＋ ユーザー追加</button>
+                <button class="btn btn-warning" id="btn-sync-expiry" style="margin-left:8px">🔄 期限切れ一括チェック</button>
+            </div>`;
 
             if (rows.length === 0) {
                 html += `<div class="empty-state"><div class="empty-icon">👤</div><p>ユーザーが登録されていません</p></div>`;
@@ -278,6 +281,7 @@
                         <td>
                             <button class="btn btn-sm btn-edit-user" data-oid="${esc(u.oid)}" data-name="${esc(u.display_name || "")}" data-webhook="${esc(u.webhook_url || "")}" data-until="${esc(u.payment_valid_until)}">編集</button>
                             <button class="btn btn-sm btn-status-user" data-oid="${esc(u.oid)}" data-status="${esc(u.payment_status)}">ステータス</button>
+                            <button class="btn btn-sm btn-danger btn-delete-user" data-oid="${esc(u.oid)}" data-email="${esc(u.email)}">削除</button>
                         </td>
                     </tr>`;
                 }
@@ -356,6 +360,36 @@
                         } catch (e) { toast(e.message, "error"); }
                     });
                 });
+            });
+
+            // Delete user
+            document.querySelectorAll(".btn-delete-user").forEach((btn) => {
+                btn.addEventListener("click", async () => {
+                    const oid = btn.dataset.oid;
+                    const email = btn.dataset.email;
+                    if (!confirm(`ユーザー「${email || oid}」を削除しますか？\n\n※ 関連するAPIキーもすべて削除されます。この操作は取り消せません。`)) return;
+                    try {
+                        await api(`/users/${oid}`, { method: "DELETE" });
+                        toast("ユーザーを削除しました"); renderUsers();
+                    } catch (e) { toast(e.message, "error"); }
+                });
+            });
+
+            // Bulk sync expiry
+            $("btn-sync-expiry")?.addEventListener("click", async () => {
+                const btn = $("btn-sync-expiry");
+                const origText = btn.textContent;
+                btn.textContent = "チェック中...";
+                btn.disabled = true;
+                try {
+                    const res = await api("/users/sync/bulk-expiry", { method: "POST" });
+                    toast(`期限切れチェック完了: ${res.expired}件を更新 (全${res.checked}件チェック)`);
+                    renderUsers();
+                } catch (e) {
+                    toast(e.message, "error");
+                    btn.textContent = origText;
+                    btn.disabled = false;
+                }
             });
         } catch (e) {
             $("page-content").innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;

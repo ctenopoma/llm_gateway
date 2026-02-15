@@ -25,6 +25,7 @@ from app import database as db
 from app.config import get_settings
 from app.services.api_key import generate_api_key
 from app.services.health_check import check_endpoint_health
+from app.services.user_management import bulk_sync_expired_users
 
 logger = structlog.get_logger(__name__)
 
@@ -226,6 +227,16 @@ class StatusUpdate(BaseModel):
     payment_status: str
 
 
+@router.post("/users/sync/bulk-expiry", dependencies=[Depends(require_admin)])
+async def bulk_sync_expiry():
+    """
+    Bulk-check all users and mark expired ones if payment_valid_until has passed.
+    Useful for periodic maintenance (cron job or scheduled task).
+    """
+    result = await bulk_sync_expired_users()
+    return result
+
+
 @router.get("/users", dependencies=[Depends(require_admin)])
 async def list_users():
     rows = await db.fetch_all(
@@ -294,6 +305,66 @@ async def update_user_status(oid: str, body: StatusUpdate):
     if result == "UPDATE 0":
         raise HTTPException(404, "User not found")
     return {"status": "updated"}
+
+
+@router.delete("/users/{oid}", dependencies=[Depends(require_admin)])
+async def delete_user(oid: str):
+    """
+    Delete a user (hard delete).
+    Associated API keys will be cascade deleted.
+    """
+    # Check if user exists
+    user = await db.fetch_one("SELECT oid, email FROM Users WHERE oid = $1", oid)
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    logger.info("delete_user_request", user_oid=oid, email=user.get("email"))
+    
+    # Delete user (cascade deletes API keys due to FK constraint)
+    result = await db.execute("DELETE FROM Users WHERE oid = $1", oid)
+    
+    if result == "DELETE 0":
+        raise HTTPException(404, "User not found")
+    
+    logger.info("delete_user_success", user_oid=oid, email=user.get("email"))
+    return {"status": "deleted", "user_oid": oid}
+
+
+@router.post("/users/{oid}/sync-expiry", dependencies=[Depends(require_admin)])
+async def sync_user_expiry_status(oid: str):
+    """
+    Check if user's payment has expired and update status accordingly.
+    Returns the current status after check.
+    """
+    user = await db.fetch_one(
+        "SELECT oid, email, payment_status, payment_valid_until FROM Users WHERE oid = $1",
+        oid,
+    )
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    today = datetime.now().date()
+    valid_until = user.get("payment_valid_until")
+    current_status = user.get("payment_status")
+    
+    # If valid_until has passed and status is not already 'expired' or 'banned', update it
+    if valid_until and valid_until < today and current_status not in ("expired", "banned"):
+        await db.execute(
+            "UPDATE Users SET payment_status = 'expired', updated_at = NOW() WHERE oid = $1",
+            oid,
+        )
+        logger.info("user_status_auto_expired", user_oid=oid, email=user.get("email"))
+        new_status = "expired"
+    else:
+        new_status = current_status
+    
+    return {
+        "user_oid": oid,
+        "email": user.get("email"),
+        "payment_valid_until": valid_until.isoformat() if valid_until else None,
+        "payment_status": new_status,
+        "synced": new_status != current_status,
+    }
 
 
 # ── API Keys ─────────────────────────────────────────────────────

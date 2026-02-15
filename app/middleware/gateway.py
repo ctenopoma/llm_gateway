@@ -32,6 +32,7 @@ from app.services.api_key import (
 )
 from app.services.budget import check_and_reserve_budget
 from app.services.context_validation import validate_context_length
+from app.services.user_management import check_and_sync_user_expiry
 
 logger = structlog.get_logger(__name__)
 
@@ -232,16 +233,20 @@ async def _authenticate(
 
 
 async def _validate_user(user_oid: str) -> None:
-    """Check user exists and payment is valid."""
-    row = await db.fetch_one(
-        "SELECT payment_status, payment_valid_until FROM Users WHERE oid = $1",
-        user_oid,
-    )
-    if not row:
+    """
+    Check user exists and payment is valid.
+    Automatically sync expiry status if payment_valid_until has passed.
+    """
+    # Check and sync expiry status
+    payment_status = await check_and_sync_user_expiry(user_oid)
+    
+    if payment_status is None:
         raise HTTPException(401, "User not found")
-    if row["payment_status"] == "banned":
+    
+    if payment_status == "banned":
         raise HTTPException(403, "Account banned")
-    if row["payment_status"] == "expired":
+    
+    if payment_status == "expired":
         raise HTTPException(403, "Payment expired")
 
 

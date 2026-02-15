@@ -173,6 +173,109 @@ Access the admin panel at: `http://localhost:8000/admin/`
 - View usage logs and audit trails
 - Manage app registrations
 - Configure model endpoints
+- Manage users and billing status
+
+---
+
+## 👥 User Management & Expiry
+
+The gateway includes automatic user expiry management based on payment status:
+
+### Manual User Deletion
+
+Delete a user and all their associated API keys:
+
+```bash
+curl -X DELETE http://localhost:8000/admin/api/users/{user_oid} \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+**Important:** Deleting a user cascades to delete all their API keys due to database constraints.
+
+### Automatic Expiry Status Sync
+
+#### Individual User Expiry Check
+
+Check and auto-update a single user's status if `payment_valid_until` has passed:
+
+```bash
+curl -X POST http://localhost:8000/admin/api/users/{user_oid}/sync-expiry \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+Response:
+```json
+{
+  "user_oid": "user-123",
+  "email": "user@example.com",
+  "payment_valid_until": "2025-12-31",
+  "payment_status": "expired",
+  "synced": true
+}
+```
+
+#### Bulk Expiry Synchronization
+
+Scan all users and mark any with past `payment_valid_until` as `expired`:
+
+```bash
+curl -X POST http://localhost:8000/admin/api/users/sync/bulk-expiry \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+Response:
+```json
+{
+  "checked": 150,
+  "expired": 3,
+  "timestamp": "2025-02-15T10:30:45.123456"
+}
+```
+
+### Automatic Expiry on Request
+
+When any user makes an API request, the gateway automatically:
+1. Fetches the user's record
+2. Checks if `payment_valid_until < today`
+3. If expired, updates `payment_status` to `"expired"`
+4. Rejects the request with a `403 Forbidden` response
+
+This means users with expired payments are automatically blocked without manual intervention.
+
+### Scheduling Bulk Sync
+
+For large user bases, run bulk expiry sync periodically using your preferred scheduler:
+
+**Cron Job Example:**
+```bash
+# Check user expirations daily at 2 AM
+0 2 * * * curl -X POST http://localhost:8000/admin/api/users/sync/bulk-expiry \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+**Docker Compose Service Example:**
+```yaml
+services:
+  gateway:
+    # ... existing config
+    depends_on:
+      - db
+      - redis
+  
+  expiry-sync:
+    image: curlimages/curl:latest
+    entrypoint: /bin/sh
+    command: |
+      -c 'while true; do
+            sleep 86400
+            curl -X POST http://gateway:8000/admin/api/users/sync/bulk-expiry \
+              -H "Authorization: Bearer $$ADMIN_TOKEN"
+          done'
+    environment:
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+    depends_on:
+      - gateway
+```
 
 ---
 
