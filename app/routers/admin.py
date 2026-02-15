@@ -307,27 +307,120 @@ async def update_user_status(oid: str, body: StatusUpdate):
     return {"status": "updated"}
 
 
+async def _get_user_related_counts(oid: str) -> dict:
+    """Count all data related to a user across tables."""
+    api_keys = await db.fetch_one(
+        "SELECT COUNT(*) AS cnt FROM ApiKeys WHERE user_oid = $1", oid
+    )
+    apps = await db.fetch_one(
+        "SELECT COUNT(*) AS cnt FROM Apps WHERE owner_id = $1", oid
+    )
+    usage_logs = await db.fetch_one(
+        "SELECT COUNT(*) AS cnt FROM UsageLogs WHERE user_oid = $1", oid
+    )
+    audit_logs = await db.fetch_one(
+        "SELECT COUNT(*) AS cnt FROM AuditLogs WHERE admin_oid = $1", oid
+    )
+    return {
+        "api_keys": api_keys["cnt"] if api_keys else 0,
+        "apps": apps["cnt"] if apps else 0,
+        "usage_logs": usage_logs["cnt"] if usage_logs else 0,
+        "audit_logs": audit_logs["cnt"] if audit_logs else 0,
+    }
+
+
+@router.get("/users/{oid}/delete-check", dependencies=[Depends(require_admin)])
+async def check_user_deletable(oid: str):
+    """
+    Pre-flight check: return counts of all related data that would be
+    affected if this user is deleted.
+    """
+    user = await db.fetch_one("SELECT oid, email, display_name FROM Users WHERE oid = $1", oid)
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    counts = await _get_user_related_counts(oid)
+
+    return {
+        "user_oid": oid,
+        "email": user.get("email"),
+        "display_name": user.get("display_name"),
+        "related": counts,
+        "has_blockers": counts["apps"] > 0 or counts["usage_logs"] > 0 or counts["audit_logs"] > 0,
+    }
+
+
 @router.delete("/users/{oid}", dependencies=[Depends(require_admin)])
-async def delete_user(oid: str):
+async def delete_user(oid: str, force: bool = False):
     """
     Delete a user (hard delete).
-    Associated API keys will be cascade deleted.
+    - ApiKeys: cascade deleted automatically (FK ON DELETE CASCADE).
+    - Apps, UsageLogs, AuditLogs: RESTRICT — require ?force=true to delete.
     """
-    # Check if user exists
     user = await db.fetch_one("SELECT oid, email FROM Users WHERE oid = $1", oid)
     if not user:
         raise HTTPException(404, "User not found")
-    
-    logger.info("delete_user_request", user_oid=oid, email=user.get("email"))
-    
-    # Delete user (cascade deletes API keys due to FK constraint)
-    result = await db.execute("DELETE FROM Users WHERE oid = $1", oid)
-    
+
+    logger.info("delete_user_request", user_oid=oid, email=user.get("email"), force=force)
+
+    counts = await _get_user_related_counts(oid)
+    has_blockers = counts["apps"] > 0 or counts["usage_logs"] > 0 or counts["audit_logs"] > 0
+
+    if has_blockers and not force:
+        parts = []
+        if counts["api_keys"] > 0:
+            parts.append(f"APIキー {counts['api_keys']}件")
+        if counts["apps"] > 0:
+            parts.append(f"アプリ {counts['apps']}件")
+        if counts["usage_logs"] > 0:
+            parts.append(f"利用ログ {counts['usage_logs']}件")
+        if counts["audit_logs"] > 0:
+            parts.append(f"監査ログ {counts['audit_logs']}件")
+        detail = "、".join(parts)
+        raise HTTPException(
+            409,
+            f"このユーザーには関連データがあるため削除できません: {detail}。"
+            f"強制削除する場合はすべての関連データも削除されます。",
+        )
+
+    # force=true: clean up blocking references before deleting
+    if has_blockers and force:
+        await db.execute("DELETE FROM Apps WHERE owner_id = $1", oid)
+        await db.execute("DELETE FROM UsageLogs WHERE user_oid = $1", oid)
+        await db.execute("DELETE FROM AuditLogs WHERE admin_oid = $1", oid)
+        logger.info(
+            "delete_user_force_cleanup",
+            user_oid=oid,
+            counts=counts,
+        )
+
+    # Delete user (cascade deletes API keys)
+    try:
+        result = await db.execute("DELETE FROM Users WHERE oid = $1", oid)
+    except Exception as e:
+        error_msg = str(e)
+        logger.error("delete_user_failed", user_oid=oid, error=error_msg)
+        if "foreign key" in error_msg.lower() or "violates" in error_msg.lower():
+            raise HTTPException(
+                409,
+                f"FK制約違反により削除できません: {error_msg}",
+            )
+        raise HTTPException(500, f"ユーザー削除中にエラーが発生しました: {error_msg}")
+
     if result == "DELETE 0":
         raise HTTPException(404, "User not found")
-    
-    logger.info("delete_user_success", user_oid=oid, email=user.get("email"))
-    return {"status": "deleted", "user_oid": oid}
+
+    logger.info("delete_user_success", user_oid=oid, email=user.get("email"), force=force)
+    return {
+        "status": "deleted",
+        "user_oid": oid,
+        "deleted_counts": {
+            "api_keys": counts["api_keys"],
+            "apps": counts["apps"] if force else 0,
+            "usage_logs": counts["usage_logs"] if force else 0,
+            "audit_logs": counts["audit_logs"] if force else 0,
+        },
+    }
 
 
 @router.post("/users/{oid}/sync-expiry", dependencies=[Depends(require_admin)])

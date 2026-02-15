@@ -367,11 +367,51 @@
                 btn.addEventListener("click", async () => {
                     const oid = btn.dataset.oid;
                     const email = btn.dataset.email;
-                    if (!confirm(`ユーザー「${email || oid}」を削除しますか？\n\n※ 関連するAPIキーもすべて削除されます。この操作は取り消せません。`)) return;
+
+                    // Step 1: Fetch related data counts
+                    let check;
                     try {
-                        await api(`/users/${oid}`, { method: "DELETE" });
-                        toast("ユーザーを削除しました"); renderUsers();
-                    } catch (e) { toast(e.message, "error"); }
+                        check = await api(`/users/${oid}/delete-check`);
+                    } catch (e) {
+                        toast(e.message, "error"); return;
+                    }
+
+                    const r = check.related;
+                    const lines = [];
+                    if (r.api_keys > 0)   lines.push(`  ・APIキー: ${r.api_keys}件`);
+                    if (r.apps > 0)        lines.push(`  ・アプリ: ${r.apps}件`);
+                    if (r.usage_logs > 0)  lines.push(`  ・利用ログ: ${r.usage_logs}件`);
+                    if (r.audit_logs > 0)  lines.push(`  ・監査ログ: ${r.audit_logs}件`);
+
+                    const needsForce = check.has_blockers;
+                    const relatedText = lines.length > 0
+                        ? `\n\n【削除される関連データ】\n${lines.join("\n")}`
+                        : "";
+
+                    // Step 2: Confirmation dialog
+                    if (needsForce) {
+                        if (!confirm(
+                            `ユーザー「${email || oid}」を強制削除しますか？\n` +
+                            `以下の関連データもすべて完全に削除されます。この操作は取り消せません。` +
+                            relatedText
+                        )) return;
+                        // Step 3: Force delete
+                        try {
+                            await api(`/users/${oid}?force=true`, { method: "DELETE" });
+                            toast("ユーザーと関連データを削除しました"); renderUsers();
+                        } catch (e) { toast(e.message, "error"); }
+                    } else {
+                        if (!confirm(
+                            `ユーザー「${email || oid}」を削除しますか？` +
+                            (r.api_keys > 0 ? `\n\n※ APIキー ${r.api_keys}件も削除されます。` : "") +
+                            `\nこの操作は取り消せません。`
+                        )) return;
+                        // Step 3: Normal delete
+                        try {
+                            await api(`/users/${oid}`, { method: "DELETE" });
+                            toast("ユーザーを削除しました"); renderUsers();
+                        } catch (e) { toast(e.message, "error"); }
+                    }
                 });
             });
 
