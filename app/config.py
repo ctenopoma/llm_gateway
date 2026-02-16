@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     LOG_LEVEL: str = "info"
+    WORKER_COUNT: int = 1
 
     # API Key Cache
     API_KEY_CACHE_TTL: int = 60  # seconds

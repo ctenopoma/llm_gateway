@@ -768,6 +768,36 @@ async def toggle_model(model_id: str):
     return {"status": "toggled", "is_active": row["is_active"] if row else None}
 
 
+@router.delete("/models/{model_id}", dependencies=[Depends(require_admin)])
+async def delete_model(model_id: str):
+    logger.info("delete_model_request", model_id=model_id)
+
+    # Check existence
+    model = await db.fetch_one("SELECT id FROM Models WHERE id = $1", model_id)
+    if not model:
+        raise HTTPException(404, "Model not found")
+
+    try:
+        result = await db.execute("DELETE FROM Models WHERE id = $1", model_id)
+    except Exception as e:
+        error_msg = str(e)
+        logger.error("delete_model_failed", model_id=model_id, error=error_msg)
+        if "foreign key" in error_msg.lower() or "violates" in error_msg.lower():
+            # Likely referenced by UsageLogs or ModelEndpoints
+            raise HTTPException(
+                409,
+                f"このモデルは使用されているため削除できません (FK制約): {error_msg}。"
+                "無効化(Toggle)を検討してください。",
+            )
+        raise HTTPException(500, f"モデル削除中にエラーが発生しました: {error_msg}")
+
+    if result == "DELETE 0":
+        # Should be covered by initial check, but safety net
+        raise HTTPException(404, "Model not found (concurrent delete?)")
+
+    return {"status": "deleted", "id": model_id}
+
+
 # ── Model Endpoints ──────────────────────────────────────────────
 
 
@@ -890,6 +920,34 @@ async def toggle_endpoint(endpoint_id: str):
         "SELECT is_active FROM ModelEndpoints WHERE id = $1", UUID(endpoint_id)
     )
     return {"status": "toggled", "is_active": row["is_active"] if row else None}
+
+
+@router.delete("/endpoints/{endpoint_id}", dependencies=[Depends(require_admin)])
+async def delete_endpoint(endpoint_id: str):
+    logger.info("delete_endpoint_request", endpoint_id=endpoint_id)
+
+    # Check existence
+    ep = await db.fetch_one("SELECT id FROM ModelEndpoints WHERE id = $1", UUID(endpoint_id))
+    if not ep:
+        raise HTTPException(404, "Endpoint not found")
+
+    try:
+        result = await db.execute("DELETE FROM ModelEndpoints WHERE id = $1", UUID(endpoint_id))
+    except Exception as e:
+        error_msg = str(e)
+        logger.error("delete_endpoint_failed", endpoint_id=endpoint_id, error=error_msg)
+        if "foreign key" in error_msg.lower() or "violates" in error_msg.lower():
+            raise HTTPException(
+                409,
+                f"このエンドポイントは使用されているため削除できません (FK制約): {error_msg}。"
+                "無効化(Toggle)を検討してください。",
+            )
+        raise HTTPException(500, f"エンドポイント削除中にエラーが発生しました: {error_msg}")
+
+    if result == "DELETE 0":
+        raise HTTPException(404, "Endpoint not found")
+
+    return {"status": "deleted", "id": endpoint_id}
 
 
 @router.post(

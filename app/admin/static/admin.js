@@ -741,6 +741,7 @@
                         <td>
                             <button class="btn btn-sm btn-edit-model" data-id="${esc(m.id)}" data-json='${JSON.stringify(m).replace(/'/g, "&#39;")}'>編集</button>
                             <button class="btn btn-sm btn-toggle-model" data-id="${esc(m.id)}">${m.is_active ? "無効化" : "有効化"}</button>
+                            <button class="btn btn-sm btn-danger btn-delete-model" data-id="${esc(m.id)}">削除</button>
                         </td>
                     </tr>`;
                 }
@@ -781,6 +782,20 @@
                         await api(`/models/${btn.dataset.id}/toggle`, { method: "PATCH" });
                         toast("ステータスを変更しました"); renderModels();
                     } catch (e) { toast(e.message, "error"); }
+                });
+            });
+
+            document.querySelectorAll(".btn-delete-model").forEach((btn) => {
+                btn.addEventListener("click", async () => {
+                    const id = btn.dataset.id;
+                    if (!confirm(`モデル「${id}」を削除しますか？\nこの操作は取り消せません。`)) return;
+                    try {
+                        await api(`/models/${id}`, { method: "DELETE" });
+                        toast("モデルを削除しました"); renderModels();
+                    } catch (e) {
+                        // Error message from 409 will be shown here
+                        toast(e.message, "error");
+                    }
                 });
             });
         } catch (e) {
@@ -857,6 +872,7 @@
                             <button class="btn btn-sm btn-edit-ep" data-id="${esc(ep.id)}" data-json='${JSON.stringify(ep).replace(/'/g, "&#39;")}'>編集</button>
                             <button class="btn btn-sm btn-trigger-health" data-id="${esc(ep.id)}">ヘルス</button>
                             <button class="btn btn-sm btn-toggle-ep" data-id="${esc(ep.id)}">${ep.is_active ? "無効化" : "有効化"}</button>
+                            <button class="btn btn-sm btn-danger btn-delete-ep" data-id="${esc(ep.id)}" data-model="${esc(ep.model_id)}">削除</button>
                         </td>
                     </tr>`;
                 }
@@ -923,6 +939,18 @@
                     try {
                         await api(`/endpoints/${btn.dataset.id}/toggle`, { method: "PATCH" });
                         toast("ステータスを変更しました"); renderEndpoints();
+                    } catch (e) { toast(e.message, "error"); }
+                });
+            });
+
+            document.querySelectorAll(".btn-delete-ep").forEach((btn) => {
+                btn.addEventListener("click", async () => {
+                    const id = btn.dataset.id;
+                    const model = btn.dataset.model;
+                    if (!confirm(`エンドポイント（モデル: ${model}）を削除しますか？\nこの操作は取り消せません。`)) return;
+                    try {
+                        await api(`/endpoints/${id}`, { method: "DELETE" });
+                        toast("エンドポイントを削除しました"); renderEndpoints();
                     } catch (e) { toast(e.message, "error"); }
                 });
             });
