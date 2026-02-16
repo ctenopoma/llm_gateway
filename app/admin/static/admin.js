@@ -1005,13 +1005,35 @@
             if (dateFrom) params.set("date_from", dateFrom);
             if (dateTo) params.set("date_to", dateTo);
 
+            // Fetch users and models for filter options
+            const [users, models] = await Promise.all([
+                api("/users").catch(() => []),
+                api("/models").catch(() => [])
+            ]);
+
             const res = await api(`/usage-logs?${params}`);
             if (!res) return;
 
+            // Build user datalist options
+            const userOptions = users.map(u => `<option value="${esc(u.oid)}">${esc(u.display_name || u.email)}</option>`).join("");
+            
+            // Build model select options
+            const modelOptions = models.map(m => `<option value="${esc(m.id)}" ${m.id === model ? "selected" : ""}>${esc(m.litellm_name || m.id)}</option>`).join("");
+
             let html = `
                 <div class="filter-bar" id="usage-filter">
-                    <div class="form-group"><label>ユーザー</label><input class="form-control" id="ulf-user" value="${esc(uid || "")}"></div>
-                    <div class="form-group"><label>モデル</label><input class="form-control" id="ulf-model" value="${esc(model || "")}"></div>
+                    <div class="form-group">
+                        <label>ユーザー</label>
+                        <input class="form-control" id="ulf-user" list="ulf-user-list" value="${esc(uid || "")}" placeholder="OIDまたは名前で検索">
+                        <datalist id="ulf-user-list">${userOptions}</datalist>
+                    </div>
+                    <div class="form-group">
+                        <label>モデル</label>
+                        <select class="form-control" id="ulf-model">
+                            <option value="">全て</option>
+                            ${modelOptions}
+                        </select>
+                    </div>
                     <div class="form-group"><label>ステータス</label>
                         <select class="form-control" id="ulf-status">
                             <option value="">全て</option>
