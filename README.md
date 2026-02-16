@@ -1,4 +1,4 @@
-# 📘 Antigravity LLM Gateway
+# 📘 LLM Gateway
 
 **A Robust Enterprise-Grade LLM API Gateway with Rate Limiting, Load Balancing, and Billing Management**
 
@@ -10,7 +10,7 @@
 
 ## 📋 Overview
 
-Antigravity LLM Gateway is an enterprise-ready API gateway for managing access to Large Language Model (LLM) services. It provides:
+LLM Gateway is an enterprise-ready API gateway for managing access to Large Language Model (LLM) services. It provides:
 
 - **Multi-Model Support**: Manage multiple LLM providers and endpoints
 - **API Key Authentication**: Secure request validation with key-based access control

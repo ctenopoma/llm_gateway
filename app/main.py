@@ -122,7 +122,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(
-        title="Antigravity LLM Gateway",
+        title="LLM Gateway",
         version="2.3.0",
         description="Enterprise-grade LLM Gateway with authentication, budgeting, and load balancing",
         lifespan=lifespan,

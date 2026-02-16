@@ -1,7 +1,7 @@
-# 📘 Antigravity LLM Gateway Technical Specification v2.4
+# 📘 LLM Gateway Technical Specification v2.4
 
 **Version:** 2.4.0 (Enhanced with App Registration & Billing)  
-**Framework:** Antigravity (Python Async)  
+**Framework:**  Python Async 
 **Status:** DRAFT - Implementation Verification  
 **Date:** 2026-02-15
 

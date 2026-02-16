@@ -1,4 +1,4 @@
--- Antigravity LLM Gateway v2.3 — Full Schema DDL
+-- LLM Gateway v2.3 — Full Schema DDL
 -- Run against a PostgreSQL 14+ instance
 
 -- Enable UUID extension

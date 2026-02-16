@@ -1,7 +1,7 @@
 [project]
-name = "antigravity-llm-gateway"
+name = "llm-gateway"
 version = "2.3.0"
-description = "Antigravity LLM Gateway - Enterprise Production Ready"
+description = "LLM Gateway - Enterprise Production Ready"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
