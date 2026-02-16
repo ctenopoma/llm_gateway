@@ -1016,7 +1016,7 @@
 
             // Build user datalist options
             const userOptions = users.map(u => `<option value="${esc(u.oid)}">${esc(u.display_name || u.email)}</option>`).join("");
-            
+
             // Build model select options
             const modelOptions = models.map(m => `<option value="${esc(m.id)}" ${m.id === model ? "selected" : ""}>${esc(m.litellm_name || m.id)}</option>`).join("");
 
@@ -1091,7 +1091,16 @@
 
             let html = `
                 <div class="filter-bar" id="audit-filter">
-                    <div class="form-group"><label>アクション</label><input class="form-control" id="alf-action" value="${esc(action || "")}"></div>
+                    <div class="form-group"><label>アクション</label>
+                        <select class="form-control" id="alf-action">
+                            <option value="">全て</option>
+                            <option value="user_created" ${action === "user_created" ? "selected" : ""}>user_created</option>
+                            <option value="user_updated" ${action === "user_updated" ? "selected" : ""}>user_updated</option>
+                            <option value="user_status_changed" ${action === "user_status_changed" ? "selected" : ""}>user_status_changed</option>
+                            <option value="user_deleted" ${action === "user_deleted" ? "selected" : ""}>user_deleted</option>
+                            <option value="api_key_rotated" ${action === "api_key_rotated" ? "selected" : ""}>api_key_rotated</option>
+                        </select>
+                    </div>
                     <div class="form-group"><label>開始日</label><input class="form-control" id="alf-from" type="date" value="${esc(dateFrom || "")}"></div>
                     <div class="form-group"><label>終了日</label><input class="form-control" id="alf-to" type="date" value="${esc(dateTo || "")}"></div>
                     <div class="form-group"><label>&nbsp;</label><button class="btn btn-primary btn-sm" id="alf-go">検索</button></div>
